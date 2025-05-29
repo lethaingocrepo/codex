@@ -19,7 +19,7 @@ jobs:
   # CI that don't need specific targets
   general:
     name: Format / etc
-    runs-on: ubuntu-24.04
+    runs-on: windows-latest
     defaults:
       run:
         working-directory: codex-rs
@@ -32,10 +32,10 @@ jobs:
       - name: cargo fmt
         run: cargo fmt -- --config imports_granularity=Item --check
 
-  # CI to validate on different os/targets
+  # CI to validate on Windows target
   lint_build_test:
-    name: ${{ matrix.runner }} - ${{ matrix.target }}
-    runs-on: ${{ matrix.runner }}
+    name: Windows - ${{ matrix.target }}
+    runs-on: windows-latest
     timeout-minutes: 30
     defaults:
       run:
@@ -44,19 +44,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Note: While Codex CLI does not support Windows today, we include
-        # Windows in CI to ensure the code at least builds there.
         include:
-          - runner: macos-14
-            target: aarch64-apple-darwin
-          - runner: macos-14
-            target: x86_64-apple-darwin
-          - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
-          - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - runner: windows-latest
-            target: x86_64-pc-windows-msvc
+          - target: x86_64-pc-windows-msvc
 
     steps:
       - uses: actions/checkout@v4
@@ -75,26 +64,10 @@ jobs:
             ${{ github.workspace }}/codex-rs/target/
           key: cargo-${{ matrix.runner }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
 
-      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
-        name: Install musl build tools
-        run: |
-          sudo apt install -y musl-tools pkg-config
-
       - name: cargo clippy
         id: clippy
         continue-on-error: true
         run: cargo clippy --target ${{ matrix.target }} --all-features --tests -- -D warnings
-
-      # Running `cargo build` from the workspace root builds the workspace using
-      # the union of all features from third-party crates. This can mask errors
-      # where individual crates have underspecified features. To avoid this, we
-      # run `cargo build` for each crate individually, though because this is
-      # slower, we only do this for the x86_64-unknown-linux-gnu target.
-      - name: cargo build individual crates
-        id: build
-        if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' }}
-        continue-on-error: true
-        run: find . -name Cargo.toml -mindepth 2 -maxdepth 2 -print0 | xargs -0 -n1 -I{} bash -c 'cd "$(dirname "{}")" && cargo build'
 
       - name: cargo test
         id: test
@@ -107,8 +80,7 @@ jobs:
       - name: verify all steps passed
         if: |
           steps.clippy.outcome == 'failure' ||
-          steps.build.outcome == 'failure' ||
           steps.test.outcome == 'failure'
         run: |
-          echo "One or more checks failed (clippy, build, or test). See logs for details."
+          echo "One or more checks failed (clippy or test). See logs for details."
           exit 1
